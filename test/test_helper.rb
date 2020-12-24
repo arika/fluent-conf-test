@@ -16,8 +16,8 @@ module FluentdConfTestHelper
     def initialize(conf_name, **options)
       @conf_name = conf_name
       @options = {
-        forward_port: ENV['TEST_FORWARD_PORT']&.to_i || 24224,
-        monitor_port: ENV['TEST_MONITOR_PORT']&.to_i || 24220,
+        forward_port: ENV['TEST_FORWARD_PORT']&.to_i || 24224, # rubocop:disable Style/NumericLiterals
+        monitor_port: ENV['TEST_MONITOR_PORT']&.to_i || 24220, # rubocop:disable Style/NumericLiterals
         bind_address: 'localhost',
       }.merge(options)
       @monitor_url = "http://#{@options[:bind_address]}:#{@options[:monitor_port]}/api/plugins.json"
@@ -70,7 +70,7 @@ module FluentdConfTestHelper
     end
 
     def metrics
-      response = URI.open(monitor_url).read
+      response = URI.parse(monitor_url).open(&:read)
       JSON.parse(response)
     end
 

@@ -10,3 +10,5 @@ gem 'fluent-plugin-record-modifier'
 gem 'fluent-plugin-rewrite-tag-filter'
 gem 'test-unit'
 gem 'uuidtools'
+
+gem 'rubocop', '~> 1.6.1'

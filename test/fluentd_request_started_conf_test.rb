@@ -69,7 +69,7 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
           'finish.parameters',
           {
             'request_id' => @request_id,
-            'parameters' => '{"bar"=>"baz"}'
+            'parameters' => '{"bar"=>"baz"}',
           },
         ],
       ],

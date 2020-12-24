@@ -10,7 +10,7 @@ fluent_logger = Fluent::Logger::FluentLogger.new(
 )
 fluent_tag = 'app'
 
-log_regexp = /\A., \[(?<time>\S+) #(?<pid>\d+)\]  *(?<severity>\S+) -- :(?: \[(?<request_id>\h{8}-\h{4}-\h{4}-\h{4}-\h{12})\])? (?<message>[^\n]*)/
+log_regexp = /\A., \[(?<time>\S+) #(?<pid>\d+)\]  *(?<severity>\S+) -- :(?: \[(?<request_id>\h{8}-\h{4}-\h{4}-\h{4}-\h{12})\])? (?<message>[^\n]*)/ # rubocop:disable Layout/LineLength
 ansi_escseq_regexp = /\e\[(?:\d{1,2}(?:;\d{1,2})?)?[mK]/
 pids = {}
 request_ids = {}

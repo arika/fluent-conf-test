@@ -1,6 +1,7 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    ast (2.4.1)
     concurrent-ruby (1.1.7)
     cool.io (1.7.0)
     fluent-config-regexp-type (1.0.0)
@@ -24,7 +25,25 @@ GEM
       yajl-ruby (~> 1.0)
     http_parser.rb (0.6.0)
     msgpack (1.3.3)
+    parallel (1.19.2)
+    parser (2.7.1.5)
+      ast (~> 2.4.1)
     power_assert (1.2.0)
+    rainbow (3.0.0)
+    regexp_parser (1.8.1)
+    rexml (3.2.4)
+    rubocop (1.6.1)
+      parallel (~> 1.10)
+      parser (>= 2.7.1.5)
+      rainbow (>= 2.2.2, < 4.0)
+      regexp_parser (>= 1.8, < 3.0)
+      rexml
+      rubocop-ast (>= 1.2.0, < 2.0)
+      ruby-progressbar (~> 1.7)
+      unicode-display_width (>= 1.4.0, < 2.0)
+    rubocop-ast (1.3.0)
+      parser (>= 2.7.1.5)
+    ruby-progressbar (1.10.1)
     serverengine (2.2.2)
       sigdump (~> 0.2.2)
     sigdump (0.2.4)
@@ -35,6 +54,7 @@ GEM
       concurrent-ruby (~> 1.0)
     tzinfo-data (1.2020.4)
       tzinfo (>= 1.0.0)
+    unicode-display_width (1.7.0)
     uuidtools (2.2.0)
     yajl-ruby (1.4.1)
 
@@ -46,6 +66,7 @@ DEPENDENCIES
   fluent-plugin-record-modifier
   fluent-plugin-rewrite-tag-filter
   fluentd
+  rubocop (~> 1.6.1)
   test-unit
   uuidtools
 
