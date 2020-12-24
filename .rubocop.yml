@@ -1,6 +1,13 @@
 AllCops:
   NewCops: enable
 
+Metrics/BlockLength:
+  Exclude:
+    - 'test/**/*_test.rb'
+
+Metrics/MethodLength:
+  Max: 25
+
 Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: comma
 

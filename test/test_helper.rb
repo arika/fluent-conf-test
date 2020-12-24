@@ -11,7 +11,10 @@ require 'uuidtools'
 
 module FluentdConfTestHelper
   class Fluentd
-    attr_reader :pid, :options, :monitor_url
+    class Error < RuntimeError; end
+    class ConfigError < Error; end
+
+    attr_reader :pid, :options, :error
 
     def initialize(conf_name, **options)
       @conf_name = conf_name
@@ -21,6 +24,7 @@ module FluentdConfTestHelper
         bind_address: 'localhost',
       }.merge(options)
       @monitor_url = "http://#{@options[:bind_address]}:#{@options[:monitor_port]}/api/plugins.json"
+      @error = nil
     end
 
     def start
@@ -29,6 +33,8 @@ module FluentdConfTestHelper
       @tmpdir = Dir.mktmpdir
       Dir.mkdir(output_dir)
       Dir.mkdir(error_output_dir)
+
+      check_config!
 
       @pid = Process.spawn(env, *cmdline)
       wait_fluentd
@@ -53,16 +59,22 @@ module FluentdConfTestHelper
 
       Process.kill(:USR1, @pid)
 
-      retry_limit = 10
-      until metric('_test_output')['buffer_total_queued_size'].zero?
-        retry_limit -= 1
-        break if retry_limit.zero?
+      queued_size = nil
+      10.times do
+        queued_size = metric('_test_output')['buffer_total_queued_size']
+        break if queued_size.zero?
 
         sleep 0.2
       end
+      return if queued_size.zero?
+
+      @error = Error.new('flush error')
+      raise @error
     end
 
     def clear
+      return unless @pid
+
       flush
       (output_files + error_output_files).each do |path|
         FileUtils.remove_entry(path)
@@ -70,8 +82,7 @@ module FluentdConfTestHelper
     end
 
     def metrics
-      response = URI.parse(monitor_url).open(&:read)
-      JSON.parse(response)
+      JSON.parse(URI.parse(@monitor_url).open(&:read))
     end
 
     def metric(plugin_id)
@@ -79,15 +90,11 @@ module FluentdConfTestHelper
     end
 
     def output_dir
-      return unless @tmpdir
-
-      "#{@tmpdir}/app"
+      @tmpdir && "#{@tmpdir}/app"
     end
 
     def error_output_dir
-      return unless @tmpdir
-
-      "#{@tmpdir}/err"
+      @tmpdir && "#{@tmpdir}/err"
     end
 
     def output_files
@@ -112,28 +119,34 @@ module FluentdConfTestHelper
       }
     end
 
-    def cmdline
+    def cmdline_base
       %W[
-        bundle exec
-        fluentd
-        -q
+        bundle exec fluentd -q
         -c #{__dir__}/fixtures/fluent_record_construction_test.conf
-        --no-supervisor
       ]
     end
 
+    def cmdline
+      cmdline_base + %w[--no-supervisor]
+    end
+
+    def check_config!
+      raise @error if @error
+      return if system(env, *cmdline_base, '--dry-run')
+
+      @error = ConfigError.new('config error')
+      raise @error
+    end
+
     def wait_fluentd
-      retry_limit = 10
+      retry_limit ||= 10
+      metrics
+    rescue SystemCallError
+      retry_limit -= 1
+      raise if retry_limit.zero?
 
-      begin
-        metrics
-      rescue SystemCallError
-        retry_limit -= 1
-        raise if retry_limit.zero?
-
-        sleep 1
-        retry
-      end
+      sleep 1
+      retry
     end
   end
 
@@ -157,8 +170,18 @@ module FluentdConfTestHelper
   def self.included(mod)
     mod.module_eval do
       mod.extend ClassMethods
-      setup { fluentd.start }
-      teardown { fluentd.clear }
+
+      setup do
+        if fluentd.error
+          omit "#{fluentd.error.message} found"
+        else
+          fluentd.start
+        end
+      end
+
+      teardown do
+        fluentd.clear
+      end
     end
   end
 
