@@ -44,6 +44,7 @@ class FluentdRequestCompletedConfTest < Test::Unit::TestCase
     end
 
     assert_equal 4, results.size
+    assert_empty errors
 
     times = []
     request_ids = []
@@ -88,21 +89,91 @@ class FluentdRequestCompletedConfTest < Test::Unit::TestCase
       ],
       sorted_results_without_random
     )
-
-    randoms = results.map { |(_, _, record)| record['random'] }.uniq
-    assert_equal 1, randoms.size
-    assert randoms.first
-
     assert_empty errors
   end
 
   test 'log with ActiveRecord model duration' do
+    @record['messages'] = '  Post Load (0.2ms)  ' \
+                          'SELECT "posts".* FROM "posts" WHERE "posts"."id" = ? LIMIT ?  [["id", 1], ["LIMIT", 1]]'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [
+          @time,
+          'finish.log_durations',
+          @record.merge(
+            'category' => 'ActiveRecord',
+            'target' => 'Post',
+            'duration' => 0.2
+          ),
+        ],
+        [@time, 'finish.logs', @record],
+      ],
+      sorted_results_without_random
+    )
+    assert_empty errors
   end
 
   test 'log with ActiveRecord model association duration' do
+    @record['messages'] = '  SQL (0.1ms)  ' \
+                          'SELECT "posts"."id" AS t0_r0, "posts"."title" AS t0_r1, "posts"."body" AS t0_r2, ' \
+                          '"posts"."created_at" AS t0_r3, "posts"."updated_at" AS t0_r4, ' \
+                          '"comments"."id" AS t1_r0, "comments"."post_id" AS t1_r1, "comments"."body" AS t1_r2, ' \
+                          '"comments"."created_at" AS t1_r3, "comments"."updated_at" AS t1_r4 FROM "posts" ' \
+                          'INNER JOIN "comments" ON "comments"."post_id" = "posts"."id"'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [
+          @time,
+          'finish.log_durations',
+          @record.merge(
+            'category' => 'ActiveRecord',
+            'target' => 'SQL',
+            'duration' => 0.1
+          ),
+        ],
+        [@time, 'finish.logs', @record],
+      ],
+      sorted_results_without_random
+    )
   end
 
-  test 'log with ActiveRecord SQL duration' do
+  test 'log with ActiveRecord other duration' do
+    @record['messages'] = '   (0.2ms)  ' \
+                          'SELECT COUNT(*) FROM "comments" WHERE "comments"."post_id" = ?  [["post_id", 1]]'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [
+          @time,
+          'finish.log_durations',
+          @record.merge(
+            'category' => 'ActiveRecord',
+            'target' => 'SQL',
+            'duration' => 0.2
+          ),
+        ],
+        [@time, 'finish.logs', @record],
+      ],
+      sorted_results_without_random
+    )
+  end
+
+  test 'ignore CACHE duration' do
+    @record['messages'] = '  CACHE Post Load (0.0ms)  SELECT "posts".* FROM "posts"'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [@time, 'finish.logs', @record],
+      ],
+      results_without_random
+    )
+    assert_empty errors
   end
 
   test 'log with unknown type duration' do
