@@ -5,6 +5,10 @@ Metrics/BlockLength:
   Exclude:
     - 'test/**/*_test.rb'
 
+Metrics/ClassLength:
+  Exclude:
+    - 'test/**/*_test.rb'
+
 Metrics/MethodLength:
   Max: 25
 

@@ -10,9 +10,90 @@ class FluentdRequestCompletedConfTest < Test::Unit::TestCase
   setup do
     @request_id = timestamp
     @record = {
-      request_id: @request_id,
-      severity: 'INFO',
+      'request_id' => timestamp,
+      'severity' => 'INFO',
     }
     @time = Time.now
+  end
+
+  test 'simple log' do
+    @record['messages'] = 'test log'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [@time, 'finish.logs', @record],
+      ],
+      results_without_random
+    )
+
+    random = results.dig(-1, -1, 'random')
+    assert random
+    assert_match(/\A0\.\d+\z/, random)
+
+    assert_empty errors
+  end
+
+  test 'log with rendering duration' do
+    @record['messages'] = '  Rendered foos/index.html.erb within layouts/application (0.9ms)'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [
+          @time,
+          'finish.log_durations',
+          @record.merge(
+            'category' => 'Views',
+            'target' => 'foos/index.html.erb',
+            'duration' => 0.9
+          ),
+        ],
+        [@time, 'finish.logs', @record],
+      ],
+      sorted_results_without_random
+    )
+
+    randoms = results.map { |(_, _, record)| record['random'] }.uniq
+    assert_equal 1, randoms.size
+    assert randoms.first
+
+    assert_empty errors
+  end
+
+  test 'log with ActiveRecord model duration' do
+  end
+
+  test 'log with ActiveRecord model association duration' do
+  end
+
+  test 'log with ActiveRecord SQL duration' do
+  end
+
+  test 'log with unknown type duration' do
+    @record['messages'] = '  unknown duration (0.9ms)'
+    post(record: @record, time: @time)
+
+    assert_equal(
+      [
+        [@time, 'finish.logs', @record],
+      ],
+      results_without_random
+    )
+    assert_empty errors
+  end
+
+  def results_without_random
+    results.map do |time, tag, record|
+      [
+        time,
+        tag,
+        record.reject { |k,| k == 'random' },
+      ]
+    end
+  end
+
+  def sorted_results_without_random
+    results_without_random.sort_by { |time, tag,| [time, tag] }
   end
 end
