@@ -60,14 +60,13 @@ module FluentdConfTestHelper
       Process.kill(:USR1, @pid)
 
       queued_size = nil
-      20.times do
+      10.times do
         queued_size = metric('_test_output')['buffer_total_queued_size']
         return if queued_size.zero?
 
-        sleep 0.3
+        sleep 0.5
       end
 
-      pp metric('_test_output')
       @error = Error.new('flush error')
       raise @error
     end

@@ -34,6 +34,41 @@ class FluentdRequestCompletedConfTest < Test::Unit::TestCase
     assert_empty errors
   end
 
+  test 'logs with duration' do
+    [
+      '  Rendered foos/index1.html.erb within layouts/application (0.1ms)',
+      '  Rendered foos/index2.html.erb within layouts/application (0.2ms)',
+    ].each do |messages|
+      record = @record.merge('messages' => messages)
+      post(record: record, time: @time)
+    end
+
+    assert_equal 4, results.size
+
+    times = []
+    request_ids = []
+    random1 = []
+    random2 = []
+    results.each do |time, _tag, record|
+      times << time
+      request_ids << record['request_id']
+      if /index1/.match?(record['messages'])
+        random1 << record['random']
+      else
+        random2 << record['random']
+      end
+    end
+
+    assert_equal 1, times.uniq.size
+    assert_equal 1, request_ids.uniq.size
+
+    assert_equal 2, random1.size
+    assert_equal 1, random1.uniq.size
+
+    assert_equal 2, random2.size
+    assert_equal 1, random2.uniq.size
+  end
+
   test 'log with rendering duration' do
     @record['messages'] = '  Rendered foos/index.html.erb within layouts/application (0.9ms)'
     post(record: @record, time: @time)
