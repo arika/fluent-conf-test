@@ -13,10 +13,30 @@
 
 @include "#{ENV['TEST_CONF']}"
 
-<label @OUTPUT>
-  <match **>
+<% options[:stub_labels].each do |label| tmpkey_name = "__label_#{label}__" -%>
+<label @<%= label %>>
+  <filter /\A(?!<%= tmpkey_name %>\.).*/>
+    @type record_modifier
+    <record>
+      <%= tmpkey_name %> "1"
+    </record>
+  </filter>
+  <match /\A(?!<%= tmpkey_name %>\.).*/>
+    @type rewrite_tag_filter
+    <rule>
+      key <%= tmpkey_name %>
+      pattern //
+      tag <%= tmpkey_name %>.${tag}
+    </rule>
+  </match>
+
+  <filter <%= tmpkey_name %>.**>
+    @type record_modifier
+    remove_keys <%= tmpkey_name %>
+  </filter>
+  <match <%= tmpkey_name %>**>
     @type file
-    @id _test_output
+    @id _test_output_<%= label %>
     path "#{ENV['TEST_OUTPUT_DIR']}/test"
     <format>
       time_format %FT%T.%9N%:z
@@ -27,6 +47,7 @@
     </buffer>
   </match>
 </label>
+<% end -%>
 
 <label @ERROR>
   <match **>

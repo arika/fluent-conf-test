@@ -5,7 +5,7 @@ require_relative 'test_helper'
 class FluentdRequestCompletedConfTest < Test::Unit::TestCase
   include FluentdConfTestHelper
 
-  fluentd_conf 'conf.d/log.conf'
+  fluentd_conf 'conf.d/log.conf', stub_labels: %w[OUTPUT]
 
   setup do
     @request_id = timestamp
