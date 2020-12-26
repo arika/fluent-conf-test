@@ -1,43 +1,43 @@
 <source>
   @type forward
   @id _test_forward_input
-  bind "#{ENV['TEST_BIND_ADDRESS']}"
-  port "#{ENV['TEST_FORWARD_PORT']}"
+  bind <%= bind_address %>
+  port <%= forward_port %>
 </source>
 
 <source>
   @type monitor_agent
-  bind "#{ENV['TEST_BIND_ADDRESS']}"
-  port "#{ENV['TEST_MONITOR_PORT']}"
+  bind <%= bind_address %>
+  port <%= monitor_port %>
 </source>
 
-@include "#{ENV['TEST_CONF']}"
+@include "<%= conf_path %>"
 
-<% options[:stub_labels].each do |label| tmpkey_name = "__label_#{label}__" -%>
+<% stub_labels.each do |label| label_key = label_key(label) -%>
 <label @<%= label %>>
-  <filter /\A(?!<%= tmpkey_name %>\.).*/>
+  <filter /\A(?!<%= label_key %>\.).*/>
     @type record_modifier
     <record>
-      <%= tmpkey_name %> "1"
+      <%= label_key %> "1"
     </record>
   </filter>
-  <match /\A(?!<%= tmpkey_name %>\.).*/>
+  <match /\A(?!<%= label_key %>\.).*/>
     @type rewrite_tag_filter
     <rule>
-      key <%= tmpkey_name %>
+      key <%= label_key %>
       pattern //
-      tag <%= tmpkey_name %>.${tag}
+      tag <%= label_key %>.${tag}
     </rule>
   </match>
 
-  <filter <%= tmpkey_name %>.**>
+  <filter <%= label_key %>.**>
     @type record_modifier
-    remove_keys <%= tmpkey_name %>
+    remove_keys <%= label_key %>
   </filter>
-  <match <%= tmpkey_name %>**>
+  <match <%= label_key %>**>
     @type file
-    @id _test_output_<%= label %>
-    path "#{ENV['TEST_OUTPUT_DIR']}/test"
+    @id <%= label_key %>
+    path "<%= output_dir %>/test"
     <format>
       time_format %FT%T.%9N%:z
     </format>
@@ -53,7 +53,7 @@
   <match **>
     @type file
     @id _test_error_output
-    path "#{ENV['TEST_ERROR_OUTPUT_DIR']}/test"
+    path "<%= error_output_dir %>/test"
     <buffer>
       @type memory
       flush_mode immediate

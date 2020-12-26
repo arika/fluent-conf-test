@@ -5,7 +5,7 @@ require_relative 'test_helper'
 class FluentdRequestStartedConfTest < Test::Unit::TestCase
   include FluentdConfTestHelper
 
-  fluentd_conf 'conf.d/request_started.conf'
+  fluentd_conf conf_path: 'fluentd/conf.d/request_started.conf', stub_labels: %w[OUTPUT]
 
   setup do
     @record = {
@@ -21,18 +21,14 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
 
     assert_equal(
       [
-        [
-          @time,
-          'finish.requests',
-          @record.merge(
-            'http_method' => 'GET',
-            'http_path_query' => '/foos/index?bar=baz'
-          ),
-        ],
+        @record.merge(
+          'http_method' => 'GET',
+          'http_path_query' => '/foos/index?bar=baz'
+        ),
       ],
-      results
+      outputs(label: 'OUTPUT', time: @time, tag: 'finish.requests')
     )
-    assert_empty errors
+    assert_empty error_outputs
   end
 
   test 'Processing line' do
@@ -41,18 +37,14 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
 
     assert_equal(
       [
-        [
-          @time,
-          'finish.controller_actions',
-          @record.merge(
-            'controller' => 'FoosController',
-            'action' => 'index'
-          ),
-        ],
+        @record.merge(
+          'controller' => 'FoosController',
+          'action' => 'index'
+        ),
       ],
-      results
+      outputs(label: 'OUTPUT', time: @time, tag: 'finish.controller_actions')
     )
-    assert_empty errors
+    assert_empty error_outputs
   end
 
   test 'Parameters line' do
@@ -61,24 +53,20 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
 
     assert_equal(
       [
-        [
-          @time,
-          'finish.parameters',
-          @record.merge(
-            'parameters' => '{"bar"=>"baz"}'
-          ),
-        ],
+        @record.merge(
+          'parameters' => '{"bar"=>"baz"}'
+        ),
       ],
-      results
+      outputs(label: 'OUTPUT', time: @time, tag: 'finish.parameters')
     )
-    assert_empty errors
+    assert_empty error_outputs
   end
 
   test 'unexpected input' do
     @record['messages'] = 'Completed 200 OK in 17ms (Views: 11.9ms)'
     post(record: @record, time: @time)
 
-    assert_empty results
-    assert_empty errors
+    assert_empty outputs
+    assert_empty error_outputs
   end
 end

@@ -14,170 +14,282 @@ module FluentdConfTestHelper
   class Fluentd
     class Error < RuntimeError; end
     class ConfigError < Error; end
+    class FlushError < Error; end
 
-    attr_reader :pid, :options, :error
+    attr_reader :env, :pid, :error
 
-    def initialize(conf_name, **options)
-      @conf_name = conf_name
-      @options = {
-        forward_port: ENV['TEST_FORWARD_PORT']&.to_i || 24224, # rubocop:disable Style/NumericLiterals
-        monitor_port: ENV['TEST_MONITOR_PORT']&.to_i || 24220, # rubocop:disable Style/NumericLiterals
-        bind_address: 'localhost',
-        stub_labels: [],
-      }.merge(options)
-      @monitor_url = "http://#{@options[:bind_address]}:#{@options[:monitor_port]}/api/plugins.json"
+    def initialize(env)
+      @env = env
+      @monitor_url = "http://#{env.bind_address}:#{env.monitor_port}/api/plugins.json"
       @error = nil
     end
 
-    def start
-      return self if @pid
-
-      @tmpdir = Dir.mktmpdir
-      Dir.mkdir(output_dir)
-      Dir.mkdir(error_output_dir)
-
-      generate_test_conf
-      check_config!
-
-      @pid = Process.spawn(env, *cmdline)
-      wait_fluentd
-      self
+    def running?
+      !@pid.nil?
     end
 
-    def stop
-      return unless @pid
+    def startup
+      return if running?
 
-      pid = @pid
-      @pid = nil
-      Process.kill(:TERM, pid)
-      Process.waitpid(pid)
+      env.setup
+      check_config
+
+      @pid = Process.spawn(*cmdline)
+      wait_fluentd
+    end
+
+    def shutdown
+      return unless running?
+
+      Process.kill(:TERM, @pid)
+      Process.waitpid(@pid)
+    rescue Errno::ESRCH
+      # ignore
     ensure
-      tmpdir = @tmpdir
-      @tmpdir = nil
-      FileUtils.remove_entry(tmpdir) if tmpdir
+      @pid = nil
+      env.teardown
+    end
+
+    def output_files
+      env.output_files
+    end
+
+    def error_output_files
+      env.error_output_files
+    end
+
+    def clear_all_outputs
+      return unless running?
+
+      flush
+      env.clear_all_outputs
     end
 
     def flush
-      return unless @pid
+      return unless running?
 
       Process.kill(:USR1, @pid)
 
-      queued_size = nil
-      10.times do
-        queued_size = test_outputs_buffer_total_queue_size
-        return if queued_size.zero?
+      limit = Time.now + 5
+      s = 0.0
+      loop do
+        return if test_outputs_buffer_total_queue_size.zero?
+        break if Time.now > limit
 
-        sleep 0.5
+        s += 0.1
+        sleep s
       end
 
-      @error = Error.new('flush error')
+      @error = FlushError.new('flush error')
       raise @error
-    end
-
-    def clear
-      return unless @pid
-
-      flush
-      (output_files + error_output_files).each do |path|
-        FileUtils.remove_entry(path)
-      end
     end
 
     def metrics
       JSON.parse(URI.parse(@monitor_url).open(&:read))
     end
 
-    def test_outputs_buffer_total_queue_size
-      output_ids_regexp = /\A_test_output_(?:#{@options[:stub_labels].join('|')})\z/
-      metrics['plugins'].sum do |h|
-        output_ids_regexp.match?(h['plugin_id']) ? h['buffer_total_queued_size'] : 0
-      end
-    end
-
-    def output_dir
-      @tmpdir && "#{@tmpdir}/app"
-    end
-
-    def error_output_dir
-      @tmpdir && "#{@tmpdir}/err"
-    end
-
-    def output_files
-      Dir.glob("#{output_dir}/*")
-    end
-
-    def error_output_files
-      Dir.glob("#{error_output_dir}/*")
-    end
-
     private
 
-    def env
-      conf_path = File.expand_path(@conf_name, "#{__dir__}/../fluentd")
-      {
-        'TEST_CONF' => conf_path,
-        'TEST_FORWARD_PORT' => @options[:forward_port].to_s,
-        'TEST_MONITOR_PORT' => @options[:monitor_port].to_s,
-        'TEST_BIND_ADDRESS' => @options[:bind_address],
-        'TEST_OUTPUT_DIR' => output_dir,
-        'TEST_ERROR_OUTPUT_DIR' => error_output_dir,
-      }
+    def test_outputs_buffer_total_queue_size
+      output_ids_regexp = /\A#{env.label_keys_regexp}\z/
+      metrics['plugins']
+        .select { |h| output_ids_regexp.match?(h['plugin_id']) }
+        .sum { |h| h['buffer_total_queued_size'] }
     end
 
     def cmdline_base
-      %W[fluentd -q -c #{@test_conf_path}]
+      %W[fluentd -q -c #{env.test_conf_path}]
     end
 
     def cmdline
-      cmdline_base + %w[--no-supervisor]
+      cmdline_base + %w[--no-supervisor] + %w[-v] * env.verbose_level
     end
 
-    def generate_test_conf
-      template_file = File.expand_path('fixtures/fluent_record_construction_test.conf.erb', __dir__)
-      template = File.read(template_file)
-      options = @options
-      test_conf = ERB.new(template, trim_mode: '-').result(binding)
-
-      puts test_conf
-
-      @test_conf_path = "#{@tmpdir}/fluent.conf"
-      File.write(@test_conf_path, test_conf)
-    end
-
-    def check_config!
+    def check_config
       raise @error if @error
-      return if system(env, *cmdline_base, '--dry-run')
+      return if system(*cmdline_base, '--dry-run')
 
       @error = ConfigError.new('config error')
       raise @error
     end
 
     def wait_fluentd
-      retry_limit ||= 10
-      metrics
-    rescue SystemCallError
-      retry_limit -= 1
-      raise if retry_limit.zero?
+      limit = Time.now + 10
+      loop do
+        begin
+          metrics
+          break
+        rescue SystemCallError
+          raise if Time.now > limit
 
-      sleep 1
-      retry
+          sleep 0.5
+        end
+      end
+    end
+  end
+
+  class TestEnv
+    TEMPLATE_FILE = File.expand_path('fixtures/fluent_record_construction_test.conf.erb', __dir__)
+
+    attr_reader :conf_path, :forward_port, :monitor_port, :bind_address, :stub_labels, :verbose_level,
+                :work_dir, :output_dir, :error_output_dir, :test_conf_path
+
+    def initialize(conf_path:, **options)
+      @conf_path = File.expand_path(conf_path, "#{__dir__}/..")
+      @forward_port = options[:forward_port] || 24224 # rubocop:disable Style/NumericLiterals
+      @monitor_port = options[:monitor_port] || 24220 # rubocop:disable Style/NumericLiterals
+      @bind_address = options[:bind_address] || 'localhost'
+      @stub_labels = options[:stub_labels] || []
+      @verbose_level = options[:verbose_level] || 0
+      @work_dir = nil
+    end
+
+    def label_key(label)
+      format('__label_%s__', label)
+    end
+
+    def label_keys_regexp(capture: false)
+      r = if capture == true
+            ''
+          elsif capture
+            "?<#{capture}>"
+          else
+            '?:'
+          end
+      pattern = "(#{r}#{stub_labels.join('|')})"
+      Regexp.new(label_key(pattern))
+    end
+
+    def setup
+      return if @work_dir
+
+      @work_dir = Dir.mktmpdir
+      @output_dir = "#{@work_dir}/app"
+      @error_output_dir = "#{@work_dir}/error"
+      @test_conf_path = "#{@work_dir}/test_fluent.conf"
+
+      Dir.mkdir(@output_dir)
+      Dir.mkdir(@error_output_dir)
+      File.write(@test_conf_path, expand_template)
+    end
+
+    def teardown
+      return unless @work_dir
+
+      work_dir = @work_dir
+      @work_dir = @output_dir = @error_output_dir = nil
+      FileUtils.remove_entry(work_dir)
+    end
+
+    def output_files
+      return [] unless @work_dir
+
+      Dir.glob("#{output_dir}/*")
+    end
+
+    def error_output_files
+      return [] unless @work_dir
+
+      Dir.glob("#{error_output_dir}/*")
+    end
+
+    def clear_all_outputs
+      (output_files + error_output_files).each do |path|
+        FileUtils.remove_entry(path)
+      end
+    end
+
+    private
+
+    def expand_template
+      ERB.new(File.read(TEMPLATE_FILE), trim_mode: '-').result(binding)
+    end
+  end
+
+  class TestOutput
+    module Record
+      attr_accessor :label, :time, :tag, :data
+    end
+
+    def initialize(env)
+      @env = env
+      @label_keys_regexp = /\A#{env.label_keys_regexp(capture: 'label')}\./
+    end
+
+    def outputs(label: nil, time: nil, tag: nil)
+      read_output_files.select do |record|
+        cond_match?(record.label, label) &&
+          cond_match?(record.time, time) &&
+          cond_match?(record.tag, tag)
+      end
+    end
+
+    private
+
+    def cond_match?(value, cond)
+      case cond
+      when nil
+        true
+      when Range
+        cond.cover?(value)
+      when Regexp
+        cond.match?(value)
+      else
+        cond == value
+      end
+    end
+
+    def read_output_files
+      @env.output_files.flat_map do |path|
+        read_output_file(path)
+      end
+    end
+
+    def read_output_file(path)
+      records = []
+      return records unless File.file?(path)
+
+      File.foreach(path) do |line|
+        time, tag, json = line.chomp.split(/\t/, 3)
+        m = @label_keys_regexp.match(tag)
+        if m
+          label = m[:label]
+          tag = m.post_match
+        end
+        records << record(label, time, tag, json)
+      end
+
+      records
+    end
+
+    def record(label, time, tag, json)
+      record = JSON.parse(json)
+      record.extend(Record)
+      record.label = label
+      record.time = Time.parse(time)
+      record.tag = tag
+      record
     end
   end
 
   module ClassMethods
-    def fluentd_conf(*args, **options)
-      @fluentd = Fluentd.new(*args, **options)
-    end
+    attr_reader :test_output
 
-    def shutdown
-      @fluentd&.stop
-      super
+    def fluentd_conf(**options)
+      test_env = TestEnv.new(**options)
+      @test_output = TestOutput.new(test_env)
+      @fluentd = Fluentd.new(test_env)
     end
 
     def fluentd
       return @fluentd if @fluentd
 
       ancestors[1..-1].detect { |klass| klass.respond_to?(:fluentd) }&.fluentd
+    end
+
+    def shutdown
+      @fluentd&.shutdown
+      super
     end
   end
 
@@ -189,12 +301,12 @@ module FluentdConfTestHelper
         if fluentd.error
           omit "#{fluentd.error.message} found"
         else
-          fluentd.start
+          fluentd.startup
         end
       end
 
       teardown do
-        fluentd.clear
+        fluentd.clear_all_outputs
       end
     end
   end
@@ -206,11 +318,10 @@ module FluentdConfTestHelper
   def fluent_logger
     return @fluent_logger if @fluent_logger
 
-    opts = fluentd.options
     @fluent_logger = Fluent::Logger::FluentLogger.new(
       nil,
-      host: opts[:bind_address],
-      port: opts[:forward_port],
+      host: fluentd.env.bind_address,
+      port: fluentd.env.forward_port,
       nanosecond_precision: true
     )
   end
@@ -223,72 +334,14 @@ module FluentdConfTestHelper
     end
   end
 
-  def flush
+  def outputs(**options)
     fluentd.flush
+    self.class.test_output.outputs(**options)
   end
 
-  def errors
-    flush
-    read_output_files(fluentd.error_output_files)
-  end
-
-  def outputs(label:, time: nil, tag: nil)
-    flush
-    outputs = read_output_files(fluentd.output_files)
-    filter_outputs(outputs, label: label, time: time, tag: tag)
-      .map { |_, _, record| record }
-  end
-
-  def read_output_files(paths)
-    paths.flat_map do |path|
-      read_output_file(path)
-    end
-  end
-
-  def filter_outputs(outputs, label:, time:, tag:)
-    outputs
-      .select { |_, out_tag, _| filter_outputs_by_label(out_tag, label) }
-      .map { |out_time, out_tag, record| [out_time, out_tag.sub(/\A\.+\./, ''), record] }
-      .select do |out_time, out_tag, _|
-        filter_outputs_by_time(out_time, time) &&
-          filter_outputs_by_tag(out_tag, tag)
-      end
-  end
-
-  def filter_outputs_by_label(tag, label)
-    tag.start_with?("__label_#{label}__.")
-  end
-
-  def filter_outputs_by_tag(tag, tag_cond)
-    return true unless tag_cond
-
-    if tag_cond.is_a?(Regexp)
-      tag_cond.match?(tag)
-    else
-      tag_cond == tag
-    end
-  end
-
-  def filter_outputs_by_time(time, time_cond)
-    return true unless time_cond
-
-    if time_cond.is_a?(Range)
-      time_cond.cover?(time)
-    else
-      time_cond == time
-    end
-  end
-
-  def read_output_file(path)
-    results = []
-    return results unless File.file?(path)
-
-    File.foreach(path) do |line|
-      time, tag, json = line.chomp.split(/\t/, 3)
-      results << [Time.parse(time), tag, JSON.parse(json)]
-    end
-
-    results
+  def error_outputs
+    fluentd.flush
+    fluentd.error_output_files.map { |path| File.read(path) }
   end
 
   def timestamp
