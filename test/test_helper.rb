@@ -74,10 +74,10 @@ module FluentdConfTestHelper
       s = 0.0
       loop do
         break if Time.now > limit
+        return if test_outputs_buffer_total_queue_size.zero?
 
         s += 0.1
         sleep s
-        return if test_outputs_buffer_total_queue_size.zero?
       end
 
       @error = FlushError.new('flush error')
@@ -131,16 +131,17 @@ module FluentdConfTestHelper
   class TestEnv
     TEMPLATE_FILE = File.expand_path('fixtures/fluent_record_construction_test.conf.erb', __dir__)
 
-    attr_reader :conf_path, :forward_port, :monitor_port, :bind_address, :stub_labels, :verbose_level,
-                :work_dir, :output_dir, :error_output_dir, :test_conf_path
+    attr_reader :conf_path, :forward_port, :monitor_port, :bind_address, :verbose_level, :stub_labels,
+                :work_dir, :output_dir, :error_output_dir, :test_conf_path, :stubbed_label_key
 
     def initialize(conf_path:, **options)
       @conf_path = File.expand_path(conf_path, "#{__dir__}/..")
       @forward_port = options[:forward_port] || 24224 # rubocop:disable Style/NumericLiterals
       @monitor_port = options[:monitor_port] || 24220 # rubocop:disable Style/NumericLiterals
       @bind_address = options[:bind_address] || 'localhost'
-      @stub_labels = options[:stub_labels] || []
       @verbose_level = options[:verbose_level] || 0
+      @stub_labels = options[:stub_labels] || []
+      @stubbed_label_key = '__stubbed_label__'
       @work_dir = nil
     end
 
@@ -218,7 +219,6 @@ module FluentdConfTestHelper
 
     def initialize(env)
       @env = env
-      @label_keys_regexp = /\A#{env.label_keys_regexp(capture: 'label')}\./
     end
 
     def outputs(label: nil, time: nil, tag: nil)
@@ -256,19 +256,15 @@ module FluentdConfTestHelper
 
       File.foreach(path) do |line|
         time, tag, json = line.chomp.split(/\t/, 3)
-        m = @label_keys_regexp.match(tag)
-        if m
-          label = m[:label]
-          tag = m.post_match
-        end
-        records << record(label, time, tag, json)
+        record = JSON.parse(json)
+        label = record.delete(@env.stubbed_label_key)
+        records << record(label, time, tag, record)
       end
 
       records
     end
 
-    def record(label, time, tag, json)
-      record = JSON.parse(json)
+    def record(label, time, tag, record)
       record.extend(RecordExt)
       record.label = label
       record.time = Time.parse(time)

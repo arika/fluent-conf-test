@@ -13,30 +13,17 @@
 
 @include "<%= conf_path %>"
 
-<% stub_labels.each do |label| label_key = label_key(label) -%>
+<% stub_labels.each do |label| -%>
 <label @<%= label %>>
-  <filter /\A(?!<%= label_key %>\.).*/>
+  <filter **>
     @type record_modifier
     <record>
-      <%= label_key %> "1"
+      <%= stubbed_label_key %> <%= label %>
     </record>
   </filter>
-  <match /\A(?!<%= label_key %>\.).*/>
-    @type rewrite_tag_filter
-    <rule>
-      key <%= label_key %>
-      pattern //
-      tag <%= label_key %>.${tag}
-    </rule>
-  </match>
-
-  <filter <%= label_key %>.**>
-    @type record_modifier
-    remove_keys <%= label_key %>
-  </filter>
-  <match <%= label_key %>**>
+  <match **>
     @type file
-    @id <%= label_key %>
+    @id <%= label_key(label) %>
     path "<%= output_dir %>/test"
     <format>
       time_format %FT%T.%9N%:z
