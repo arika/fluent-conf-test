@@ -2,7 +2,7 @@
 
 require_relative 'test_helper'
 
-class FluentdRequestCompletedConfTest < Test::Unit::TestCase
+class FluentdRoutingConfTest < Test::Unit::TestCase
   include FluentdConfTestHelper
 
   fluentd_conf conf_path: 'fluentd/conf.d/routing.conf', stub_labels: %w[REQUEST_STARTED REQUEST_COMPLETED LOG]
