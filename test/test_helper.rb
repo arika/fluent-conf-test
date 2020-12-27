@@ -207,8 +207,13 @@ module FluentdConfTestHelper
   end
 
   class TestOutput
-    module Record
+    module RecordExt
       attr_accessor :label, :time, :tag, :data
+
+      def inspect
+        ext = { label: label, time: time, tag: tag }
+        super + "(#{ext})"
+      end
     end
 
     def initialize(env)
@@ -264,7 +269,7 @@ module FluentdConfTestHelper
 
     def record(label, time, tag, json)
       record = JSON.parse(json)
-      record.extend(Record)
+      record.extend(RecordExt)
       record.label = label
       record.time = Time.parse(time)
       record.tag = tag

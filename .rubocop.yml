@@ -12,6 +12,9 @@ Metrics/ClassLength:
 Metrics/MethodLength:
   Max: 25
 
+Style/TrailingCommaInArguments:
+  Enabled: false
+
 Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: comma
 

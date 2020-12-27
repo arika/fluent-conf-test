@@ -28,6 +28,7 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
       ],
       outputs(label: 'OUTPUT', time: @time, tag: 'finish.requests')
     )
+    assert_equal 1, outputs.size
     assert_empty error_outputs
   end
 
@@ -44,6 +45,7 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
       ],
       outputs(label: 'OUTPUT', time: @time, tag: 'finish.controller_actions')
     )
+    assert_equal 1, outputs.size
     assert_empty error_outputs
   end
 
@@ -59,6 +61,7 @@ class FluentdRequestStartedConfTest < Test::Unit::TestCase
       ],
       outputs(label: 'OUTPUT', time: @time, tag: 'finish.parameters')
     )
+    assert_equal 1, outputs.size
     assert_empty error_outputs
   end
 
