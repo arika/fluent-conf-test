@@ -73,11 +73,11 @@ module FluentdConfTestHelper
       limit = Time.now + 5
       s = 0.0
       loop do
-        return if test_outputs_buffer_total_queue_size.zero?
         break if Time.now > limit
 
         s += 0.1
         sleep s
+        return if test_outputs_buffer_total_queue_size.zero?
       end
 
       @error = FlushError.new('flush error')
